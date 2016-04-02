@@ -17,6 +17,8 @@ define("VIMEO_CLIENT_ID", 'ad4c3e454c7bbb115fd01ec5e4b55cf409f2cc31');
 define("VIMEO_CLIENT_SECRET", 'GScPSrBofMFMbQQaBaKRk3lHH1D2rEZIiCKIMGxFbpW62ah7TnS7YHNAi7XnAQ8AiEoxCaRzCH9+qdUQF2rON8kWaY5pL37cYtINiwKIjubEdSv3AdW2GTsBaUGbortt');
 define("VIMEO_ACCESS_TOKEN", 'b405b9b453f844bdbf311a6914f7e4ae');
 
+define("PES_HASH", 'ad4c3e454c7bbb115fdtFdau2801ec5e4b55cf409f2cc31');
+
 
 /** 
  * Add query filters to the gallery page.
@@ -373,12 +375,61 @@ add_filter( 'sf_edit_query_args', 'pes_search_filter_exclude_fields', 10, 2);
  * Example: https://gist.github.com/rmorse/7b59b45a14b1ca179868
  */
 function pes_search_filter_change_label($input_object, $sfid) {
-  //echo '<pre>LARGE attachment'.print_r($input_object,1).'</pre>';
-  if ($sfid == 16100 && $input_object['name'] == '_sf_post_type') {
-    foreach ($input_object['options'] as $key => $option) {
-      if ($option->label == 'Media') {
-        $input_object['options'][$key]->label = 'Photos';
-      }
+  if ($sfid == 16100) {
+    //echo '<pre>Input object'.print_r($input_object,1).'</pre>';
+    switch ($input_object['name']) {
+      case '_sf_post_type':
+        foreach ($input_object['options'] as $key => $option) {
+          if ($option->label == 'Media') {
+            $input_object['options'][$key]->label = 'Photos';
+          }
+        }
+        break;
+        
+      case '_sfm_pes_topic':
+        $terms = pes_term_transform_array('topic');
+        foreach ($input_object['options'] as $key => $option) {
+          if (!$option->value) continue;
+          $new = $terms[$option->value] . (($option->count) ? ' ('. $option->count .')' : '');
+          if ($new != $option->label) $option->label = $new;
+        }
+        break;
+        
+      case '_sfm_pes_meeting_type':
+        $terms = pes_term_transform_array('meeting');
+        foreach ($input_object['options'] as $key => $option) {
+          if (!$option->value) continue;
+          $new = $terms[$option->value] . (($option->count) ? ' ('. $option->count .')' : '');
+          if ($new != $option->label) $option->label = $new;
+        }
+        break;
+      
+      case '_sfm_pes_leader':
+        $terms = pes_term_transform_array('leader');
+        foreach ($input_object['options'] as $key => $option) {
+          if (!$option->value) continue;
+          $new = $terms[$option->value] . (($option->count) ? ' ('. $option->count .')' : '');
+          if ($new != $option->label) $option->label = $new;
+        }
+        break;
+      
+      case '_sfm_pes_country':
+        $terms = pes_term_transform_array('country');
+        foreach ($input_object['options'] as $key => $option) {
+          if (!$option->value) continue;
+          $new = $terms[$option->value] . (($option->count) ? ' ('. $option->count .')' : '');
+          if ($new != $option->label) $option->label = $new;
+        }
+        break;
+      
+      case '_sfm_pes_video_category':
+        $terms = pes_term_transform_array('video-categories');
+        foreach ($input_object['options'] as $key => $option) {
+          if (!$option->value) continue;
+          $new = $terms[$option->value] . (($option->count) ? ' ('. $option->count .')' : '');
+          if ($new != $option->label) $option->label = $new;
+        }
+        break;
     }
   }
   return $input_object;
@@ -386,6 +437,14 @@ function pes_search_filter_change_label($input_object, $sfid) {
 add_filter('sf_input_object_pre', 'pes_search_filter_change_label', 10, 2);
 
 
+function pes_term_transform_array($category) {
+  $new_terms = array();
+  $terms = get_terms($category);
+  foreach ($terms as $term) {
+    $new_terms[$term->term_id] = $term->name;
+  }
+  return $new_terms;
+}
 
 
 /***
@@ -461,6 +520,61 @@ function set_predefined_fields(){
 }*/
 
 
+function pes_crypt($q) {
+  //return base64_encode( mcrypt_encrypt( MCRYPT_RIJNDAEL_256, md5( PES_HASH ), $q, MCRYPT_MODE_CBC, md5( md5( PES_HASH ) ) ) );
+  
+  return md5(md5(($q . PES_HASH . $q)));
+}
+
+function pes_decrypt($q) {
+  return rtrim( mcrypt_decrypt( MCRYPT_RIJNDAEL_256, md5( PES_HASH ), base64_decode( $q ), MCRYPT_MODE_CBC, md5( md5( PES_HASH ) ) ), "\0");
+}
+
+
+
+/**
+ * Recognize download URL.
+ */
+function pes_download_attachment_redirect() {
+  global $wp;
+
+  if ( preg_match( '/^download-pes-photo\/(\d+)$/', $wp->request, $vars ) === 1 ) {
+    $attachment_id = pes_decrypt($vars[1]);
+    if ( get_post_type( $attachment_id ) === 'attachment' ) {
+      if (!in_array($vars[2], array('hr', 'web'))) $vars[2] = 'web';
+      pes_download_attachment($vars[1], $vars[2]);
+    }
+  }
+}
+add_action( 'send_headers', 'pes_download_attachment_redirect' );
+
+
+/**
+ * Get single attachment download url
+ * 
+ * @param 	int $attachment_id
+ * @param 	string $size the desired size of the file.
+ * @return 	mixed
+ */
+function pes_download_attachment_url( $attachment_id = 0, $size = 'hr' ) {
+  if ( get_post_type( $attachment_id ) === 'attachment' ) {
+    $options = get_option( 'download_attachments_general' );
+
+    echo '<pre>Options '.print_r($options,1).'</pre>';
+    $crypted = pes_crypt($attachment_id);
+    echo 'HASH: '. $crypted .'<br />';
+    //$decrypted = pes_decrypt($crypted);
+    //echo 'DECRYPTED: '. $decrypted .'<br />';
+
+    //return home_url( '/download-pes-photo/' . $crypted . '/' . $size );
+    //$query_string = htmlentities();
+    $query_string = 'key='. urlencode($crypted) .'&id='. urlencode($attachment_id) .'&size='. urlencode($size);
+    return plugins_url('pes-functionalities/includes/download.php?'. htmlentities($query_string));
+  } 
+  else {
+    return '';
+  }
+}
 
 /**
  * Process attachment download function
@@ -468,7 +582,113 @@ function set_predefined_fields(){
  * @param 	int $attachment_id
  * @return 	mixed
  */
-function pes_download_attachment( $attachment_id = 0 ) {
+function pes_download_attachment( $attachment_id = 0, $size = 'hr' ) {
+	if ( get_post_type( $attachment_id ) === 'attachment' ) {
+		// get options
+		$options = get_option( 'download_attachments_general' );
+
+		if ( ! isset( $options['download_method'] ) )
+			$options['download_method'] = 'force';
+
+		// get wp upload directory data
+		$uploads = wp_upload_dir();
+
+		// get file name
+		$attachment = get_post_meta( $attachment_id, '_wp_attached_file', true );
+
+		// force download
+		if ( $options['download_method'] === 'force' ) {
+			// get file path
+			$filepath = apply_filters( 'da_download_attachment_filepath', $uploads['basedir'] . '/' . $attachment, $attachment_id );
+
+			// file exists?
+			if ( ! file_exists( $filepath ) || ! is_readable( $filepath ) )
+				return false;
+
+			// if filename contains folders
+			if ( ( $position = strrpos( $attachment, '/', 0 ) ) !== false )
+				$filename = substr( $attachment, $position + 1 );
+			else
+				$filename = $attachment;
+
+			// disable compression
+			if ( ini_get( 'zlib.output_compression' ) )
+				@ini_set( 'zlib.output_compression', 0 );
+			
+			if ( function_exists( 'apache_setenv' ) ) {
+				@apache_setenv( 'no-gzip', 1 );
+			}
+			
+			// disable max execution time limit
+			if ( ! in_array( 'set_time_limit', explode( ',',  ini_get( 'disable_functions' ) ) ) && ! ini_get( 'safe_mode' ) ) {
+				@set_time_limit(0);
+			}
+			
+			// disable magic quotes runtime
+			if ( function_exists( 'get_magic_quotes_runtime' ) && get_magic_quotes_runtime() && version_compare( phpversion(), '5.4', '<' ) ) {
+				set_magic_quotes_runtime(0);
+			}
+
+			// set needed headers
+			nocache_headers();
+			header( 'Robots: none' );
+			header( 'Content-Type: application/download' );
+			header( 'Content-Description: File Transfer' );
+			header( 'Content-Disposition: attachment; filename=' . rawurldecode( $filename ) );
+			header( 'Content-Transfer-Encoding: binary' );
+			header( 'Accept-Ranges: bytes' );
+			header( 'Expires: 0' );
+			header( 'Cache-Control: must-revalidate, post-check=0, pre-check=0' );
+			header( 'Pragma: public' );
+			header( 'Content-Length: ' . filesize( $filepath ) );
+
+			// increase downloads count
+			update_post_meta( $attachment_id, '_da_downloads', (int) get_post_meta( $attachment_id, '_da_downloads', true ) + 1 );
+			
+			// action hook
+			do_action( 'da_process_file_download', $attachment_id );
+
+			// start printing file
+			if ( $filepath = fopen( $filepath, 'rb' ) ) {
+				while ( ! feof( $filepath ) && ( ! connection_aborted()) ) {
+					echo fread( $filepath, 1048576 );
+					flush();
+				}
+
+				fclose( $filepath );
+			} else
+				return false;
+
+			exit;
+		// redirect to file
+		} else {
+			// increase downloads count
+			update_post_meta( $attachment_id, '_da_downloads', (int) get_post_meta( $attachment_id, '_da_downloads', true ) + 1 );
+			
+			// action hook
+			do_action( 'da_process_file_download', $attachment_id );
+
+			// force file url
+			header( 'Location: ' . apply_filters( 'da_download_attachment_filepath', $uploads['baseurl'] . '/' . $attachment, $attachment_id ) );
+			exit;
+		}
+	} else
+		return false;
+}
+
+
+
+
+
+
+
+/**
+ * Process attachment download function
+ * 
+ * @param 	int $attachment_id
+ * @return 	mixed
+ */
+function pes_download_attachment_old( $attachment_id = 0 ) {
 	if ( get_post_type( $attachment_id ) === 'attachment' ) {
 		// get options
 		$options = get_option( 'download_attachments_general' );
