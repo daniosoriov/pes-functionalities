@@ -549,6 +549,14 @@ function pes_download_attachment_redirect() {
 add_action( 'send_headers', 'pes_download_attachment_redirect' );
 
 
+function pes_check_photos_from_gallery($post_id, $photos) {
+  foreach ($photos as $attachment_id) {
+    $attachment = get_post($attachment_id);
+    if ($attachment->post_parent != $post_id) return FALSE;
+  }
+  return TRUE;
+}
+
 /**
  * Get single attachment download url
  * 
@@ -558,17 +566,22 @@ add_action( 'send_headers', 'pes_download_attachment_redirect' );
  */
 function pes_download_attachment_url( $attachment_id = 0, $size = 'hr' ) {
   if ( get_post_type( $attachment_id ) === 'attachment' ) {
-    $options = get_option( 'download_attachments_general' );
-
-    echo '<pre>Options '.print_r($options,1).'</pre>';
     $crypted = pes_crypt($attachment_id);
-    echo 'HASH: '. $crypted .'<br />';
-    //$decrypted = pes_decrypt($crypted);
-    //echo 'DECRYPTED: '. $decrypted .'<br />';
+    $query_string = 'type=attachment&key='. urlencode($crypted) .'&id='. urlencode($attachment_id) .'&size='. urlencode($size);
+    return plugins_url('pes-functionalities/includes/download.php?'. htmlentities($query_string));
+  } 
+  else {
+    return '';
+  }
+}
 
-    //return home_url( '/download-pes-photo/' . $crypted . '/' . $size );
-    //$query_string = htmlentities();
-    $query_string = 'key='. urlencode($crypted) .'&id='. urlencode($attachment_id) .'&size='. urlencode($size);
+/**
+ *
+ */
+function pes_download_gallery_url($post_id, $size = 'hr') {
+  if ( get_post_type( $post_id ) === 'gallery' ) {
+    $crypted = pes_crypt($post_id);
+    $query_string = 'type=gallery&key='. urlencode($crypted) .'&id='. urlencode($post_id) .'&size='. urlencode($size);
     return plugins_url('pes-functionalities/includes/download.php?'. htmlentities($query_string));
   } 
   else {
@@ -600,6 +613,14 @@ function pes_download_attachment( $attachment_id = 0, $size = 'hr' ) {
 		if ( $options['download_method'] === 'force' ) {
 			// get file path
 			$filepath = apply_filters( 'da_download_attachment_filepath', $uploads['basedir'] . '/' . $attachment, $attachment_id );
+          
+          // If downloading the WEB size photo.
+          if ($size == 'web') {
+            $metadata = wp_get_attachment_metadata($attachment_id);
+            $filepath_tmp = $uploads['basedir'] . '/' . $attachment;
+            $filebase = dirname($filepath_tmp);
+            $filepath = $filebase .'/'. $metadata['sizes']['large']['file'];
+          }
 
 			// file exists?
 			if ( ! file_exists( $filepath ) || ! is_readable( $filepath ) )
@@ -644,6 +665,10 @@ function pes_download_attachment( $attachment_id = 0, $size = 'hr' ) {
 
 			// increase downloads count
 			update_post_meta( $attachment_id, '_da_downloads', (int) get_post_meta( $attachment_id, '_da_downloads', true ) + 1 );
+          
+          // increase download count for PES.
+          $post_meta_pes = '_pes_downloads_'. $size;
+          update_post_meta( $attachment_id, $post_meta_pes, (int) get_post_meta( $attachment_id, $post_meta_pes, true ) + 1 );
 			
 			// action hook
 			do_action( 'da_process_file_download', $attachment_id );
@@ -674,6 +699,75 @@ function pes_download_attachment( $attachment_id = 0, $size = 'hr' ) {
 		}
 	} else
 		return false;
+}
+
+
+/**
+ * Process attachment download function
+ * 
+ * @param 	int $attachment_id
+ * @return 	mixed
+ */
+function pes_download_gallery($post_id, $photos, $size = 'hr') {
+  if ( get_post_type( $post_id ) === 'gallery' ) {
+    $files = array();
+    // get wp upload directory data
+    $uploads = wp_upload_dir();
+    foreach ($photos as $attachment_id) {
+      // get file name
+      $attachment = get_post_meta( $attachment_id, '_wp_attached_file', true );
+      
+      // get file path
+      $filepath = apply_filters( 'da_download_attachment_filepath', $uploads['basedir'] . '/' . $attachment, $attachment_id );
+      
+      // If downloading the WEB size photo.
+      if ($size == 'web') {
+        $metadata = wp_get_attachment_metadata($attachment_id);
+        $filepath_tmp = $uploads['basedir'] . '/' . $attachment;
+        $filebase = dirname($filepath_tmp);
+        $filepath = $filebase .'/'. $metadata['sizes']['large']['file'];
+      }
+      
+      // file exists?
+      if ( ! file_exists( $filepath ) || ! is_readable( $filepath ) )
+        return false;
+      
+      // if filename contains folders
+      if ( ( $position = strrpos( $attachment, '/', 0 ) ) !== false )
+          $filename = substr( $attachment, $position + 1 );
+      else
+          $filename = $attachment;
+      
+      $files[] = array('filepath' => $filepath, 'filename' => $filename);
+    }
+    
+    $zipname = str_replace(' ', '', ucwords(get_the_title($post_id))) .'Photos'. strtoupper($size) .'-'. time() .'.zip';
+    
+    $zip = new ZipArchive;
+    if ($zip->open($zipname, ZipArchive::CREATE) === TRUE) {
+      foreach ($files as $filedata) {
+        $zip->addFile($filedata['filepath'], $filedata['filename']);
+      }
+      $zip->close();
+    } else {
+      echo 'Failed to download zip file. Please contact site administrator.';
+    }
+    
+    header( 'Robots: none' );
+    header( 'Content-Type: application/zip' );
+    header( 'Content-Description: File Transfer' );
+    header( 'Content-Disposition: attachment; filename=' . $zipname );
+    header( 'Content-Transfer-Encoding: binary' );
+    header( 'Accept-Ranges: bytes' );
+    header( 'Expires: 0' );
+    header( 'Cache-Control: must-revalidate, post-check=0, pre-check=0' );
+    header( 'Pragma: public' );
+    header( 'Content-Length: ' . filesize( $zipname ) );
+    readfile($zipname);
+    
+    exit;
+  }
+  else return FALSE;
 }
 
 
