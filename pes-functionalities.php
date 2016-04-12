@@ -368,6 +368,22 @@ function pes_search_filter_exclude_fields($query_args, $sfid) {
 }
 add_filter( 'sf_edit_query_args', 'pes_search_filter_exclude_fields', 10, 2);
 
+
+/**
+ * Creates the welcome link on the navigation bar for logged in users.
+ */
+function pes_navigation_name($items) {
+  if (is_user_logged_in()) {
+    $user = wp_get_current_user();
+    $name = $user->data->display_name;
+    $items .= '<li id="menu-item-16025" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-16025" data-depth="0"><a href="/user/"><span class="menu-title">Hi, '. $name .'!</span></a></li>';
+    $items .= '<li id="menu-item-16023" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-16023" data-depth="0"><a href="/logout/"><span class="menu-title">Logout</span></a></li>';
+  }
+  return $items;
+}
+add_filter( 'wp_nav_menu_items', 'pes_navigation_name');
+
+
 /**
  * Changes the output of the search and filter input values
  * before rendering it.
@@ -741,7 +757,7 @@ function pes_download_gallery($post_id, $photos, $size = 'hr') {
       $files[] = array('filepath' => $filepath, 'filename' => $filename);
     }
     
-    $zipname = str_replace(' ', '', ucwords(get_the_title($post_id))) .'Photos'. strtoupper($size) .'-'. time() .'.zip';
+    $zipname = 'Photos'. strtoupper($size) . time() .'.zip';
     
     $zip = new ZipArchive;
     if ($zip->open($zipname, ZipArchive::CREATE) === TRUE) {
@@ -768,175 +784,4 @@ function pes_download_gallery($post_id, $photos, $size = 'hr') {
     exit;
   }
   else return FALSE;
-}
-
-
-
-
-
-
-
-/**
- * Process attachment download function
- * 
- * @param 	int $attachment_id
- * @return 	mixed
- */
-function pes_download_attachment_old( $attachment_id = 0 ) {
-	if ( get_post_type( $attachment_id ) === 'attachment' ) {
-		// get options
-		$options = get_option( 'download_attachments_general' );
-
-		if ( ! isset( $options['download_method'] ) )
-			$options['download_method'] = 'force';
-
-		// get wp upload directory data
-		$uploads = wp_upload_dir();
-
-		// get file name
-		$attachment = get_post_meta( $attachment_id, '_wp_attached_file', true );
-
-		// force download
-		if ( $options['download_method'] === 'force' ) {
-			// get file path
-			$filepath = apply_filters( 'da_download_attachment_filepath', $uploads['basedir'] . '/' . $attachment, $attachment_id );
-
-			// file exists?
-			if ( ! file_exists( $filepath ) || ! is_readable( $filepath ) )
-				return false;
-
-			// if filename contains folders
-			if ( ( $position = strrpos( $attachment, '/', 0 ) ) !== false )
-				$filename = substr( $attachment, $position + 1 );
-			else
-				$filename = $attachment;
-          
-          
-          
-//          $attachment_location = $_SERVER["DOCUMENT_ROOT"] . "/file.zip";
-//          if (file_exists($filepath)) {
-//
-//              header($_SERVER["SERVER_PROTOCOL"] . " 200 OK");
-//              header("Cache-Control: public"); // needed for i.e.
-//              header("Content-Type: application/zip");
-//              header("Content-Transfer-Encoding: Binary");
-//              header("Content-Length:".filesize($filepath));
-//              header("Content-Disposition: attachment; filename=" . rawurldecode( $filename ) );
-//              readfile($filepath);
-//              die();        
-//          } else {
-//              die("Error: File not found.");
-//          } 
-          
-          
-          
-          
-          
-          // required for IE
-          if(ini_get('zlib.output_compression')) 
-              ini_set('zlib.output_compression', 'Off');	
-          
-          // get the file mime type using the file extension
-          switch(strtolower(substr(strrchr($filepath,'.'),1)))
-          {
-              case 'pdf': $mime = 'application/pdf'; break;
-              case 'zip': $mime = 'application/zip'; break;
-              case 'jpeg':
-              case 'jpg': $mime = 'image/jpg'; break;
-              default: exit();
-          }
-          header('Pragma: public'); 	// required
-          header('Expires: 0');		// no cache
-          header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
-          header('Last-Modified: '.gmdate ('D, d M Y H:i:s', filemtime ($filepath)).' GMT');
-          header('Cache-Control: private',false);
-          header('Content-Type: '.$mime);
-          header('Content-Disposition: attachment; filename="'.basename($filepath).'"');
-          header('Content-Transfer-Encoding: binary');
-          header('Content-Length: '.filesize($filepath));	// provide file size
-          header('Connection: close');
-          readfile($filepath);		// push it out
-          exit();
-          
-          
-          
-          
-          
-          
-          
-          
-          
-          
-
-//			 turn off compression
-//			if ( ini_get( 'zlib.output_compression' ) )
-//				ini_set( 'zlib.output_compression', 0 );
-//          
-//			 set needed headers
-//			header( 'Content-Type: application/download' );
-//			header( 'Content-Disposition: attachment; filename=' . rawurldecode( $filename ) );
-//			header( 'Content-Transfer-Encoding: binary' );
-//			header( 'Accept-Ranges: bytes' );
-//			header( 'Cache-control: private' );
-//			header( 'Pragma: private' );
-//			header( 'Expires: Mon, 26 Jul 1997 05:00:00 GMT' );
-//			header( 'Content-Length: ' . filesize( $filepath ) );
-//
-//			// increase counter of downloads
-//			update_post_meta( $attachment_id, '_da_downloads', (int) get_post_meta( $attachment_id, '_da_downloads', true ) + 1 );
-//
-//			// start printing file
-//			if ( $filepath = fopen( $filepath, 'rb' ) ) {
-//				while ( ! feof( $filepath ) && ( ! connection_aborted()) ) {
-//					echo fread( $filepath, 1048576 );
-//					flush();
-//				}
-//
-//				fclose( $filepath );
-//			} else
-//				return false;
-
-//			exit;
-		// redirect to file
-		} else {
-			// increase counter of downloads
-			update_post_meta( $attachment_id, '_da_downloads', (int) get_post_meta( $attachment_id, '_da_downloads', true ) + 1 );
-
-			// force file url
-			header( 'Location: ' . apply_filters( 'da_download_attachment_filepath', $uploads['url'] . '/' . $attachment, $attachment_id ) );
-			exit;
-		}
-	} else
-		return false;
-}
-
-
-
-// ONLY FOR REGISTERED USERS: https://www.dfactory.eu/support/topic/download-allowed-for-registered-users/
-
-class Download_Pes {
-
-	/**
-	 * Class constructor.
-	 */
-	public function __construct() {
-
-
-
-
-		// settings
-		/*$this->options = array( 'general' => get_option( 'download_pes_general', $this->defaults['general'] ) );
-
-		// actions
-		add_action( 'plugins_loaded', array( &$this, 'load_textdomain' ) );
-		add_action( 'after_setup_theme', array( &$this, 'pass_variables' ), 9 );
-		add_action( 'admin_enqueue_scripts', array( &$this, 'admin_scripts_styles' ) );
-		add_action( 'wp_enqueue_scripts', array( &$this, 'frontend_scripts_styles' ) );
-		add_action( 'send_headers', array( &$this, 'download_redirect' ) );
-
-		// filters
-		add_filter( 'the_content', array( &$this, 'add_content' ) );
-		add_filter( 'plugin_row_meta', array( &$this, 'plugin_extend_links' ), 10, 2 );
-		add_filter( 'plugin_action_links', array( &$this, 'plugin_settings_link' ), 10, 2 );*/
-	}
 }
