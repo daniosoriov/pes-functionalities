@@ -368,6 +368,23 @@ function pes_search_filter_exclude_fields($query_args, $sfid) {
 }
 add_filter( 'sf_edit_query_args', 'pes_search_filter_exclude_fields', 10, 2);
 
+/**
+ * Removes the meta box for admin posts for different
+ * custom taxonomy terms.
+ */
+function pes_remove_custom_taxonomy() {
+  $tax_h = array('meeting', 'topic', 'party', 'pes-category', 'video-categories');
+  $tax = array('leader', 'country');
+  foreach ($tax as $slug) {
+    remove_meta_box( 'tagsdiv-'. $slug, 'gallery', 'side' );
+    remove_meta_box( 'tagsdiv-'. $slug, 'gallery', 'side' );
+  }
+  foreach ($tax_h as $slug) {
+    remove_meta_box( $slug .'div', 'gallery', 'side' );
+    remove_meta_box( $slug .'div', 'gallery', 'side' );
+  }
+}
+add_action( 'admin_menu', 'pes_remove_custom_taxonomy' );
 
 /**
  * Creates the welcome link on the navigation bar for logged in users.
