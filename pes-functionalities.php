@@ -387,6 +387,48 @@ function pes_remove_custom_taxonomy() {
 add_action( 'admin_menu', 'pes_remove_custom_taxonomy' );
 
 /**
+ * Save gallery metadata when saved.
+ * Taken from: https://codex.wordpress.org/Plugin_API/Action_Reference/save_post
+ *
+ * @param int $post_id The post ID.
+ * @param post $post The post object.
+ * @param bool $update Whether this is an existing post being updated or not.
+ */
+function save_gallery_meta( $post_id, $post, $update ) {
+  
+  // TODO: Check this page: https://www.advancedcustomfields.com/resources/acfsave_post/
+  // TODO: Check also this page: https://www.advancedcustomfields.com/resources/update_field/
+  // TODO: Check also this page: https://www.advancedcustomfields.com/resources/get_field/
+  
+  // TODO: Probably what needs to be done is:
+  // Use acfsave_post to get the data saved to the post after saving it in the database,
+  // then use the get_field to get all the attachments realted to the post,
+  // then do a foreach and modify one by one the fields related, which are:
+  // topic, meeting type and countries.
+  // After this is done, do the same with the pictures but only update the parent post
+  // with the value of the leader.
+  
+  
+  
+  
+  if ( isset( $_REQUEST['book_author'] ) ) {
+    update_post_meta( $post_id, 'book_author', sanitize_text_field( $_REQUEST['book_author'] ) );
+  }
+
+  if ( isset( $_REQUEST['publisher'] ) ) {
+    update_post_meta( $post_id, 'publisher', sanitize_text_field( $_REQUEST['publisher'] ) );
+  }
+
+  // Checkboxes are present if checked, absent if not.
+  if ( isset( $_REQUEST['inprint'] ) ) {
+    update_post_meta( $post_id, 'inprint', TRUE );
+  } else {
+    update_post_meta( $post_id, 'inprint', FALSE );
+  }
+}
+add_action( 'save_post_gallery', 'save_gallery_meta', 10, 3 );
+
+/**
  * Creates the welcome link on the navigation bar for logged in users.
  */
 function pes_navigation_name($items) {
@@ -409,6 +451,13 @@ add_filter( 'wp_nav_menu_items', 'pes_navigation_name');
  */
 function pes_search_filter_change_label($input_object, $sfid) {
   if ($sfid == 16100) {
+    $assoc = array(
+      '_sfm_pes_topic' => 'topic',
+      '_sfm_pes_meeting_type' => 'meeting',
+      '_sfm_pes_leader' => 'leader',
+      '_sfm_pes_country' => 'country',
+      '_sfm_pes_video_category' => 'video-categories',
+    );
     //echo '<pre>Input object'.print_r($input_object,1).'</pre>';
     switch ($input_object['name']) {
       case '_sf_post_type':
@@ -420,48 +469,11 @@ function pes_search_filter_change_label($input_object, $sfid) {
         break;
         
       case '_sfm_pes_topic':
-        $terms = pes_term_transform_array('topic');
-        foreach ($input_object['options'] as $key => $option) {
-          if (!$option->value) continue;
-          $new = $terms[$option->value] . (($option->count) ? ' ('. $option->count .')' : '');
-          if ($new != $option->label) $option->label = $new;
-        }
-        break;
-        
       case '_sfm_pes_meeting_type':
-        $terms = pes_term_transform_array('meeting');
-        foreach ($input_object['options'] as $key => $option) {
-          if (!$option->value) continue;
-          $new = $terms[$option->value] . (($option->count) ? ' ('. $option->count .')' : '');
-          if ($new != $option->label) $option->label = $new;
-        }
-        break;
-      
       case '_sfm_pes_leader':
-        $terms = pes_term_transform_array('leader');
-        foreach ($input_object['options'] as $key => $option) {
-          if (!$option->value) continue;
-          $new = $terms[$option->value] . (($option->count) ? ' ('. $option->count .')' : '');
-          if ($new != $option->label) $option->label = $new;
-        }
-        break;
-      
       case '_sfm_pes_country':
-        $terms = pes_term_transform_array('country');
-        foreach ($input_object['options'] as $key => $option) {
-          if (!$option->value) continue;
-          $new = $terms[$option->value] . (($option->count) ? ' ('. $option->count .')' : '');
-          if ($new != $option->label) $option->label = $new;
-        }
-        break;
-      
       case '_sfm_pes_video_category':
-        $terms = pes_term_transform_array('video-categories');
-        foreach ($input_object['options'] as $key => $option) {
-          if (!$option->value) continue;
-          $new = $terms[$option->value] . (($option->count) ? ' ('. $option->count .')' : '');
-          if ($new != $option->label) $option->label = $new;
-        }
+        pes_term_order_array($input_object['options'], $assoc[$input_object['name']]);
         break;
     }
   }
@@ -469,6 +481,34 @@ function pes_search_filter_change_label($input_object, $sfid) {
 }
 add_filter('sf_input_object_pre', 'pes_search_filter_change_label', 10, 2);
 
+
+function pes_term_order_array(&$input, $taxonomy) {
+  $terms = pes_term_transform_array($taxonomy);
+  $vals = array();
+  $first_value = new stdClass();
+  foreach ($input as $key => $option) {
+    if (!$option->value) {
+      $first_value = $option;
+      $vals[] = $option;
+      continue;
+    }
+    $option->label = $terms[$option->value];
+    if (!$option->label) {
+      $tax_term = get_term_by('id', $option->value, $taxonomy);
+      $option->label = $tax_term->name;
+    }
+    $vals[$option->label] = $option;
+  }
+  if ($taxonomy == 'topic' || $taxonomy == 'meeting') {
+    array_shift($vals);
+  }
+  ksort($vals);
+  if ($taxonomy == 'topic' || $taxonomy == 'meeting') {
+    array_unshift($vals, $first_value);
+  }
+  //if ($taxonomy == 'topic') echo '<pre>vals '.print_r($vals,1).'</pre>';
+  $input = $vals;
+}
 
 function pes_term_transform_array($category) {
   $new_terms = array();
